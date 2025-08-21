@@ -442,7 +442,9 @@ function join() {
     currentWebSocket = ws;
 
     // Send user info message.
-    ws.send(JSON.stringify({name: username}));
+  const params = new URLSearchParams(window.location.search);
+  const noLimit = params.get('limit') === '0';
+  ws.send(JSON.stringify({name: username, noLimit}));
   });
 
   ws.addEventListener("message", event => {
@@ -509,7 +511,8 @@ function join() {
     } else {
       // A regular chat message.
       if (data.timestamp > lastSeenTimestamp) {
-        addChatMessage(data.name, data.message);
+  const isoTs = new Date(data.timestamp).toISOString();
+  addChatMessage(data.name, data.message, isoTs);
         lastSeenTimestamp = data.timestamp;
         if (data.joined === username) highlightOwnName();
       }
@@ -526,39 +529,23 @@ function join() {
   });
 }
 
-function addChatMessage(name, text) {
+function addChatMessage(name, text, isoTs) {
   let p = document.createElement("p");
-  // Extract optional inline timestamp pattern at end if provided via system broadcast
-  let displayTime = null;
-  // If text object style? keep simple: rely on Date.now when appended.
-  const now = new Date();
-  displayTime = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-
+  const ts = isoTs ? new Date(isoTs) : new Date();
+  const datePart = ts.getFullYear()+"-"+String(ts.getMonth()+1).padStart(2,'0')+"-"+String(ts.getDate()).padStart(2,'0');
+  const timePart = ts.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
   if (name) {
-    let tag = document.createElement("span");
-    tag.className = "username";
-    tag.innerText = name + ": ";
-    p.appendChild(tag);
+    let header = document.createElement("span");
+    header.className = "username";
+    header.innerText = name + " - " + datePart + " " + timePart;
+    p.appendChild(header);
+    p.appendChild(document.createElement('br'));
   }
-  // Message span
   const msgSpan = document.createElement('span');
   msgSpan.appendChild(linkify(text));
   p.appendChild(msgSpan);
-  // Time span
-  const timeSpan = document.createElement('span');
-  timeSpan.style.color = 'lightblue';
-  timeSpan.style.fontSize = '0.1em';
-  timeSpan.style.marginLeft = '6px';
-  timeSpan.innerText = displayTime;
-  p.appendChild(timeSpan);
-
-  // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
-  // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
-  // change.
   chatlog.appendChild(p);
-  if (isAtBottom) {
-    chatlog.scrollBy(0, 1e8);
-  }
+  if (isAtBottom) chatlog.scrollBy(0, 1e8);
 }
 
 function highlightOwnName() {
@@ -572,30 +559,20 @@ function highlightOwnName() {
 }
 
 function linkify(text) {
-  // Split by URLs and create nodes; basic regex for http/https
   const urlRegex = /(https?:\/\/[\w\-._~:/?#@!$&'()*+,;=%]+)/gi;
   const frag = document.createDocumentFragment();
-  let lastIndex = 0;
-  let match;
+  let lastIndex = 0; let match;
   while ((match = urlRegex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
-    }
+    if (match.index > lastIndex) frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
     const a = document.createElement('a');
-    a.href = match[0];
-    a.innerText = match[0];
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
+    a.href = match[0]; a.innerText = match[0]; a.target = '_blank'; a.rel='noopener noreferrer';
     frag.appendChild(a);
     lastIndex = match.index + match[0].length;
   }
-  if (lastIndex < text.length) {
-    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
-  }
+  if (lastIndex < text.length) frag.appendChild(document.createTextNode(text.slice(lastIndex)));
   return frag;
 }
 
 startNameChooser();
 </script>
 <!--===================================================================================-->
-</html>

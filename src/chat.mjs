@@ -263,9 +263,27 @@ export class ChatRoom {
           // Query: ?name=xxx&msg=yyy
           const name = (url.searchParams.get("name") || "").trim();
           const msg = (url.searchParams.get("msg") || "").trim();
+          const limitParam = url.searchParams.get("limit");
+          const noLimit = limitParam === '0';
           if (!name || !msg) return new Response("Missing name or msg", {status: 400});
           if (name.length > 32) return new Response("Name too long", {status: 413});
           if (msg.length > 256) return new Response("Message too long", {status: 413});
+
+          // Apply rate limit unless limit=0 specified.
+          if (!noLimit) {
+            try {
+              let ip = request.headers.get("CF-Connecting-IP") || "0.0.0.0";
+              let limiterId = this.env.limiters.idFromName(ip);
+              let limiterStub = this.env.limiters.get(limiterId);
+              let resp = await limiterStub.fetch("https://dummy-url", {method: "POST"});
+              let cooldown = +(await resp.text());
+              if (cooldown > 0) {
+                return new Response(JSON.stringify({error:"rate-limited", retryAfter: cooldown}), {status: 429, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+              }
+            } catch (e) {
+              // Ignore limiter errors, allow message.
+            }
+          }
 
           const data = {
             name,
@@ -312,6 +330,49 @@ export class ChatRoom {
           return new Response(JSON.stringify({status: "ok", cleared: true}), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
         default: {
+          if (url.pathname === "/query") {
+            // /api/room/<room>/query?after=ISO|epoch&before=ISO|epoch&limit=N&cursor=ISO
+            // Inclusive bounds; results oldest->newest. If limit reached and more, provide nextCursor
+            let afterParam = url.searchParams.get("after");
+            let beforeParam = url.searchParams.get("before");
+            let cursorParam = url.searchParams.get("cursor"); // alias for before older-than
+            let limitParam2 = parseInt(url.searchParams.get("limit") || '50', 10);
+            if (isNaN(limitParam2) || limitParam2 < 1) limitParam2 = 50;
+            const HARD_LIMIT = 200;
+            if (limitParam2 > HARD_LIMIT) limitParam2 = HARD_LIMIT;
+
+            function toIso(v){
+              if(!v) return null;
+              if (/^\d+$/.test(v)) { // epoch ms
+                return new Date(parseInt(v,10)).toISOString();
+              }
+              try { return new Date(v).toISOString(); } catch(e){ return null; }
+            }
+            let afterIso = toIso(afterParam);
+            let beforeIso = toIso(beforeParam || cursorParam);
+
+            // If neither before nor after set, we page from newest backwards, so set reverse=true and limit+1
+            let listOpts = { reverse: true, limit: limitParam2 + 1 };
+            if (afterIso) listOpts.start = afterIso; // start key (inclusive)
+            if (beforeIso) listOpts.end = beforeIso; // end key (inclusive when reverse=true means older boundary)
+
+            let iter = await this.storage.list(listOpts);
+            let values = [];
+            for (let [k,v] of iter.entries()) {
+              values.push({k,v});
+            }
+            // values now newest->oldest because reverse true. Convert to chronological order.
+            let more = false;
+            if (values.length > limitParam2) { more = true; values = values.slice(0, limitParam2); }
+            values.reverse();
+            const msgs = values.map(({v}) => { let o = JSON.parse(v); return {...o, timestamp: new Date(o.timestamp).toISOString()}; });
+            let nextCursor = null;
+            if (more && values.length) {
+              // next page should request older than oldest we returned, so provide its key minus a tiny epsilon by returning the key itself as before= to include it unless client uses exclusive logic. Provide key.
+              nextCursor = values[0].k; // oldest key
+            }
+            return new Response(JSON.stringify({messages: msgs, nextCursor}), {status: 200, headers:{"Content-Type":"application/json","Access-Control-Allow-Origin":"*"}});
+          }
           // Dynamic /lastN (e.g. /last3, /last10, /last500) with cap, and /all.
           if (url.pathname.startsWith("/last") && url.pathname.length > 5) {
             const nStr = url.pathname.slice(5);
@@ -388,22 +449,17 @@ export class ChatRoom {
         webSocket.close(1011, "WebSocket broken.");
         return;
       }
-
-      // Check if the user is over their rate limit and reject the message if so.
-      if (!session.limiter.checkLimit()) {
-        webSocket.send(JSON.stringify({
-          error: "Your IP is being rate-limited, please try again later."
-        }));
-        return;
-      }
-
-      // I guess we'll use JSON.
+      // Parse message JSON first to detect potential noLimit flag on initial handshake.
       let data = JSON.parse(msg);
 
       if (!session.name) {
         // The first message the client sends is the user info message with their name. Save it
         // into their session object.
         session.name = "" + (data.name || "anonymous");
+        // If client declared noLimit (e.g., URL param limit=0) then disable rate limiting for this session.
+        if (data.noLimit === true) {
+          session.noLimit = true;
+        }
         // attach name to the webSocket so it survives hibernation
         webSocket.serializeAttachment({ ...webSocket.deserializeAttachment(), name: session.name });
 
@@ -425,6 +481,14 @@ export class ChatRoom {
         this.broadcast({joined: session.name});
 
         webSocket.send(JSON.stringify({ready: true}));
+        return;
+      }
+
+      // For subsequent messages apply rate limit unless disabled.
+      if (!session.noLimit && !session.limiter.checkLimit()) {
+        webSocket.send(JSON.stringify({
+          error: "Your IP is being rate-limited, please try again later."
+        }));
         return;
       }
 
