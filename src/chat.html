@@ -226,6 +226,29 @@ if (hostname == "") {
 }
 
 function startNameChooser() {
+  // Support passing name via URL param ?name=foo or ?name=* (random)
+  try {
+    const params = new URLSearchParams(window.location.search);
+    let urlName = params.get("name");
+    if (urlName) {
+      if (urlName === '*') {
+        urlName = generateRandomName();
+      } else {
+        // Trim and enforce max length / basic normalization (server only enforces length)
+        urlName = urlName.trim().slice(0, 32);
+      }
+      if (urlName.length > 0) {
+        username = urlName;
+        // Pre-fill so user sees chosen name if they navigate back somehow before removal.
+        nameInput.value = username;
+        startRoomChooser();
+        return; // Skip manual entry UI.
+      }
+    }
+  } catch (e) {
+    // Ignore URL parsing errors and fall back to manual input.
+  }
+
   nameForm.addEventListener("submit", event => {
     event.preventDefault();
     username = nameInput.value;
@@ -241,6 +264,25 @@ function startNameChooser() {
   });
 
   nameInput.focus();
+}
+
+// Simple random name generator for when ?name=* is used.
+function generateRandomName() {
+  const adjectives = [
+    'Brave','Calm','Swift','Merry','Bright','Clever','Lucky','Nimble','Quiet','Fuzzy',
+    'Jolly','Rapid','Witty','Chill','Zesty','Cosmic','Sunny','Icy','Rusty','Bouncy'
+  ];
+  const nouns = [
+    'Tiger','Panda','Falcon','Otter','Phoenix','Dragon','Koala','Lynx','Eagle','Wolf',
+    'Dolphin','Badger','Puffin','Hawk','Panda','Raven','Lion','Gecko','Moose','Yak'
+  ];
+  const adj = adjectives[Math.floor(Math.random()*adjectives.length)];
+  const noun = nouns[Math.floor(Math.random()*nouns.length)];
+  let num = Math.floor(Math.random()*1000); // up to 3 digits
+  let candidate = `${adj}${noun}${num}`;
+  // Ensure <=32 chars; if too long drop number.
+  if (candidate.length > 32) candidate = `${adj}${noun}`.slice(0,32);
+  return candidate;
 }
 
 function startRoomChooser() {
@@ -424,7 +466,7 @@ function join() {
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
         addChatMessage(null,
-            "welcome to chat.fcic.cc");
+            "chat.fcic.cc");
         // addChatMessage(null,
         //     "* WARNING: Participants in this chat are random people on the internet. " +
         //     "Names are not authenticated; anyone can pretend to be anyone. The people " +
