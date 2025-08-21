@@ -534,7 +534,9 @@ function addChatMessage(name, text) {
     tag.innerText = name + ": ";
     p.appendChild(tag);
   }
-  p.appendChild(document.createTextNode(text));
+  // Linkify http/https URLs in the message text.
+  const linkified = linkify(text);
+  p.appendChild(linkified);
 
   // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
   // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't
@@ -553,6 +555,30 @@ function highlightOwnName() {
       child.title = 'You';
     }
   }
+}
+
+function linkify(text) {
+  // Split by URLs and create nodes; basic regex for http/https
+  const urlRegex = /(https?:\/\/[\w\-._~:/?#@!$&'()*+,;=%]+)/gi;
+  const frag = document.createDocumentFragment();
+  let lastIndex = 0;
+  let match;
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      frag.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+    const a = document.createElement('a');
+    a.href = match[0];
+    a.innerText = match[0];
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    frag.appendChild(a);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
+  return frag;
 }
 
 startNameChooser();

@@ -312,6 +312,16 @@ export class ChatRoom {
           return new Response(value, {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
 
+        case "/last3":
+        case "/last10": {
+          const count = url.pathname === "/last3" ? 3 : 10;
+          const storage = await this.storage.list({reverse: true, limit: count});
+          const arr = [...storage.values()]; // newest -> oldest
+          arr.reverse(); // oldest -> newest
+          const json = '[' + arr.join(',') + ']'; // values already JSON strings
+          return new Response(json, {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+        }
+
         default:
           return new Response("Not found", {status: 404});
       }
