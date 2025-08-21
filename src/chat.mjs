@@ -299,7 +299,9 @@ export class ChatRoom {
           this.broadcast(dataStr);
           const key = new Date(data.timestamp).toISOString();
           await this.storage.put(key, dataStr);
-          return new Response(dataStr, {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+          // API output: convert timestamp -> ISO string
+          const apiObj = { ...data, timestamp: new Date(data.timestamp).toISOString() };
+          return new Response(JSON.stringify(apiObj), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
 
         case "/last": {
@@ -308,18 +310,19 @@ export class ChatRoom {
           const iter = storage.values();
           const next = iter.next();
           if (next.done) return new Response(null, {status: 204, headers: {"Access-Control-Allow-Origin": "*"}});
-          const value = next.value; // already a JSON string
-          return new Response(value, {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+          const raw = JSON.parse(next.value);
+          const apiObj = { ...raw, timestamp: new Date(raw.timestamp).toISOString() };
+          return new Response(JSON.stringify(apiObj), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
 
         case "/last3":
         case "/last10": {
           const count = url.pathname === "/last3" ? 3 : 10;
           const storage = await this.storage.list({reverse: true, limit: count});
-          const arr = [...storage.values()]; // newest -> oldest
+          const arr = [...storage.values()].map(v => JSON.parse(v)); // newest -> oldest
           arr.reverse(); // oldest -> newest
-          const json = '[' + arr.join(',') + ']'; // values already JSON strings
-          return new Response(json, {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+          const api = arr.map(o => ({...o, timestamp: new Date(o.timestamp).toISOString()}));
+          return new Response(JSON.stringify(api), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
 
         default:
