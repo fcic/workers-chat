@@ -38,19 +38,6 @@
 // Incidentally, in pre-modules Workers syntax, "bindings" (like KV bindings, secrets, etc.)
 // appeared in your script as global variables, but in the new modules syntax, this is no longer
 // the case. Instead, bindings are now delivered in an "environment object" when an event handler
-// (or Durable Object class constructor) is called. Look for the variable `env` below.
-//
-// We made this change, again, for composability: The global scope is global, but if you want to
-// call into existing code that has different environment requirements, then you need to be able
-// to pass the environment as a parameter instead.
-//
-// Once again, see the wrangler.toml file to understand how the environment is configured.
-
-// =======================================================================================
-// The regular Worker part...
-//
-// This section of the code implements a normal Worker that receives HTTP requests from external
-// clients. This part is stateless.
 
 // With the introduction of modules, we're experimenting with allowing text/data blobs to be
 // uploaded and exposed as synthetic modules. In wrangler.toml we specify a rule that files ending
@@ -80,28 +67,30 @@ async function handleErrors(request, func) {
   }
 }
 
-// ===============================
-// The Worker fetch handler
-// ===============================
-//
-// This is the main entry point for HTTP requests to the Worker. It receives requests from the
-// outside world and routes them to the appropriate handler.
-
 // `fetch` isn't the only handler. If your worker runs on a Cron schedule, it will receive calls
 // to a handler named `scheduled`, which should be exported here in a similar way. We will be
 // adding other handlers for other types of events over time.
 export default {
   async fetch(request, env) {
     return await handleErrors(request, async () => {
+      // We have received an HTTP request! Parse the URL and route the request.
+
       let url = new URL(request.url);
       let path = url.pathname.slice(1).split('/');
+
       if (!path[0]) {
+        // Serve our HTML at the root path.
         return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
       }
-      if (path[0] === 'api') {
-        return handleApiRequest(path.slice(1), request, env);
+
+      switch (path[0]) {
+        case "api":
+          // This is a request for `/api/...`, call the API handler.
+          return handleApiRequest(path.slice(1), request, env);
+
+        default:
+          return new Response("Not found", {status: 404});
       }
-      return new Response("Not found", {status: 404});
     });
   }
 }
@@ -305,16 +294,6 @@ export class ChatRoom {
           return new Response(JSON.stringify(apiObj), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
 
-        case "/last3":
-        case "/last10": {
-          const count = url.pathname === "/last3" ? 3 : 10;
-          const storage = await this.storage.list({reverse: true, limit: count});
-          const arr = [...storage.values()].map(v => JSON.parse(v)); // newest -> oldest
-          arr.reverse(); // oldest -> newest
-          const api = arr.map(o => ({...o, timestamp: new Date(o.timestamp).toISOString()}));
-          return new Response(JSON.stringify(api), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
-        }
-
         case "/clear": {
           // Clear all stored messages for this room.
           // Optional protection: if env.CLEAR_KEY is set, require ?key= match.
@@ -332,9 +311,32 @@ export class ChatRoom {
           this.broadcast({name: "SYSTEM", message: "(history cleared)", timestamp: Date.now()});
           return new Response(JSON.stringify({status: "ok", cleared: true}), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
-
-        default:
+        default: {
+          // Dynamic /lastN (e.g. /last3, /last10, /last500) with cap, and /all.
+          if (url.pathname.startsWith("/last") && url.pathname.length > 5) {
+            const nStr = url.pathname.slice(5);
+            if (/^\d+$/.test(nStr)) {
+              let count = parseInt(nStr, 10);
+              if (count < 1) count = 1;
+              const MAX = 500; // safety cap
+              if (count > MAX) count = MAX;
+              const storage = await this.storage.list({reverse: true, limit: count});
+              const arr = [...storage.values()].map(v => JSON.parse(v)); // newest->oldest
+              arr.reverse();
+              const api = arr.map(o => ({...o, timestamp: new Date(o.timestamp).toISOString()}));
+              return new Response(JSON.stringify(api), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+            }
+          }
+          if (url.pathname === "/all") {
+            const MAX = 1000; // hard cap to avoid excessive reads
+            const storage = await this.storage.list({reverse: true, limit: MAX});
+            const arr = [...storage.values()].map(v => JSON.parse(v));
+            arr.reverse();
+            const api = arr.map(o => ({...o, timestamp: new Date(o.timestamp).toISOString()}));
+            return new Response(JSON.stringify(api), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+          }
           return new Response("Not found", {status: 404});
+        }
       }
     });
   }
