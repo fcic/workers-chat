@@ -528,15 +528,29 @@ function join() {
 
 function addChatMessage(name, text) {
   let p = document.createElement("p");
+  // Extract optional inline timestamp pattern at end if provided via system broadcast
+  let displayTime = null;
+  // If text object style? keep simple: rely on Date.now when appended.
+  const now = new Date();
+  displayTime = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+
   if (name) {
     let tag = document.createElement("span");
     tag.className = "username";
     tag.innerText = name + ": ";
     p.appendChild(tag);
   }
-  // Linkify http/https URLs in the message text.
-  const linkified = linkify(text);
-  p.appendChild(linkified);
+  // Message span
+  const msgSpan = document.createElement('span');
+  msgSpan.appendChild(linkify(text));
+  p.appendChild(msgSpan);
+  // Time span
+  const timeSpan = document.createElement('span');
+  timeSpan.style.color = '#888';
+  timeSpan.style.fontSize = '0.7em';
+  timeSpan.style.marginLeft = '6px';
+  timeSpan.innerText = displayTime;
+  p.appendChild(timeSpan);
 
   // Append the new chat line, making sure that if the chatlog was scrolled to the bottom
   // before, it remains scrolled to the bottom, and otherwise the scroll position doesn't

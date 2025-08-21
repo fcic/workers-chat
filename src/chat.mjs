@@ -325,6 +325,24 @@ export class ChatRoom {
           return new Response(JSON.stringify(api), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
 
+        case "/clear": {
+          // Clear all stored messages for this room.
+          // Optional protection: if env.CLEAR_KEY is set, require ?key= match.
+          const requiredKey = this.env.CLEAR_KEY;
+            const providedKey = url.searchParams.get('key');
+          if (requiredKey && requiredKey !== providedKey) {
+            return new Response("Forbidden", {status: 403, headers: {"Access-Control-Allow-Origin": "*"}});
+          }
+          const all = await this.storage.list();
+          for (const key of all.keys()) {
+            await this.storage.delete(key);
+          }
+          this.lastTimestamp = 0;
+          // Inform current clients (optional) that history cleared.
+          this.broadcast({name: "SYSTEM", message: "(history cleared)", timestamp: Date.now()});
+          return new Response(JSON.stringify({status: "ok", cleared: true}), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+        }
+
         default:
           return new Response("Not found", {status: 404});
       }
