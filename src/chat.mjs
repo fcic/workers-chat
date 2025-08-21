@@ -315,6 +315,17 @@ export class ChatRoom {
           return new Response(JSON.stringify(apiObj), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
         }
 
+        case "/all": {
+          // Return all stored messages (JSON) or 204 if none.
+          const storage = await this.storage.list({reverse: true});
+          const iter = storage.values();
+          const next = iter.next();
+          if (next.done) return new Response(null, {status: 204, headers: {"Access-Control-Allow-Origin": "*"}});
+          const raw = JSON.parse(next.value);
+          const apiObj = { ...raw, timestamp: new Date(raw.timestamp).toISOString() };
+          return new Response(JSON.stringify(apiObj), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+        }
+
         case "/last3":
         case "/last10": {
           const count = url.pathname === "/last3" ? 3 : 10;
