@@ -279,6 +279,39 @@ export class ChatRoom {
           return new Response(null, { status: 101, webSocket: pair[0] });
         }
 
+        case "/send": {
+          // One-off HTTP API to send a message without opening a WebSocket.
+          // Query: ?name=xxx&msg=yyy
+          const name = (url.searchParams.get("name") || "").trim();
+          const msg = (url.searchParams.get("msg") || "").trim();
+          if (!name || !msg) return new Response("Missing name or msg", {status: 400});
+          if (name.length > 32) return new Response("Name too long", {status: 413});
+          if (msg.length > 256) return new Response("Message too long", {status: 413});
+
+          const data = {
+            name,
+            message: msg,
+            timestamp: Math.max(Date.now(), this.lastTimestamp + 1)
+          };
+          this.lastTimestamp = data.timestamp;
+          const dataStr = JSON.stringify(data);
+            // Broadcast to all connected sessions.
+          this.broadcast(dataStr);
+          const key = new Date(data.timestamp).toISOString();
+          await this.storage.put(key, dataStr);
+          return new Response(dataStr, {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+        }
+
+        case "/last": {
+          // Return last stored message (JSON) or 204 if none.
+          const storage = await this.storage.list({reverse: true, limit: 1});
+          const iter = storage.values();
+          const next = iter.next();
+          if (next.done) return new Response(null, {status: 204, headers: {"Access-Control-Allow-Origin": "*"}});
+          const value = next.value; // already a JSON string
+          return new Response(value, {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
+        }
+
         default:
           return new Response("Not found", {status: 404});
       }

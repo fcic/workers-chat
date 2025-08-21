@@ -465,8 +465,8 @@ function join() {
       // All pre-join messages have been delivered.
       if (!wroteWelcomeMessages) {
         wroteWelcomeMessages = true;
-        addChatMessage(null,
-            "chat.fcic.cc");
+        // addChatMessage(null,
+        //     "chat.fcic.cc");
         // addChatMessage(null,
         //     "* WARNING: Participants in this chat are random people on the internet. " +
         //     "Names are not authenticated; anyone can pretend to be anyone. The people " +
@@ -483,14 +483,35 @@ function join() {
               "* This is a private room. You can invite someone to the room by sending them the URL.");
         } else {
           addChatMessage(null,
-              "* Welcome to #" + roomname + ". Say hi!");
+              "* Welcome to #" + roomname + ". chat.fcic.cc");
         }
+
+        // After roster and backlog ready, highlight self in roster.
+        highlightOwnName();
+        // Support URL param msg= to send a first message automatically; msg=* -> fetch last message.
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const autoMsg = params.get('msg');
+          if (autoMsg) {
+            if (autoMsg === '*') {
+              // Fetch last message via new /last endpoint and append (no send)
+              fetch(`https://${hostname}/api/room/${roomname}/last`).then(r=> r.status===200? r.json(): null).then(j=>{
+                if (j && j.message) {
+                  addChatMessage(j.name, j.message);
+                }
+              }).catch(()=>{});
+            } else if (currentWebSocket) {
+              currentWebSocket.send(JSON.stringify({message: autoMsg.slice(0,256)}));
+            }
+          }
+        } catch(e) {}
       }
     } else {
       // A regular chat message.
       if (data.timestamp > lastSeenTimestamp) {
         addChatMessage(data.name, data.message);
         lastSeenTimestamp = data.timestamp;
+        if (data.joined === username) highlightOwnName();
       }
     }
   });
@@ -521,6 +542,16 @@ function addChatMessage(name, text) {
   chatlog.appendChild(p);
   if (isAtBottom) {
     chatlog.scrollBy(0, 1e8);
+  }
+}
+
+function highlightOwnName() {
+  for (let child of roster.childNodes) {
+    if (child.innerText === username) {
+      child.style.color = '#ff5722';
+      child.style.fontWeight = '900';
+      child.title = 'You';
+    }
   }
 }
 
