@@ -69,9 +69,6 @@ async function handleErrors(request, func) {
     return await func();
   } catch (err) {
     if (request.headers.get("Upgrade") == "websocket") {
-      // Annoyingly, if we return an HTTP error in response to a WebSocket request, Chrome devtools
-      // won't show us the response body! So... let's send a WebSocket response with an error
-      // frame instead.
       let pair = new WebSocketPair();
       pair[1].accept();
       pair[1].send(JSON.stringify({error: err.stack}));
@@ -83,35 +80,28 @@ async function handleErrors(request, func) {
   }
 }
 
-// In modules-syntax workers, we use `export default` to export our script's main event handlers.
-// Here, we export one handler, `fetch`, for receiving HTTP requests. In pre-modules workers, the
-// fetch handler was registered using `addEventHandler("fetch", event => { ... })`; this is just
-// new syntax for essentially the same thing.
+// ===============================
+// The Worker fetch handler
+// ===============================
 //
+// This is the main entry point for HTTP requests to the Worker. It receives requests from the
+// outside world and routes them to the appropriate handler.
+
 // `fetch` isn't the only handler. If your worker runs on a Cron schedule, it will receive calls
 // to a handler named `scheduled`, which should be exported here in a similar way. We will be
 // adding other handlers for other types of events over time.
 export default {
   async fetch(request, env) {
     return await handleErrors(request, async () => {
-      // We have received an HTTP request! Parse the URL and route the request.
-
       let url = new URL(request.url);
       let path = url.pathname.slice(1).split('/');
-
       if (!path[0]) {
-        // Serve our HTML at the root path.
         return new Response(HTML, {headers: {"Content-Type": "text/html;charset=UTF-8"}});
       }
-
-      switch (path[0]) {
-        case "api":
-          // This is a request for `/api/...`, call the API handler.
-          return handleApiRequest(path.slice(1), request, env);
-
-        default:
-          return new Response("Not found", {status: 404});
+      if (path[0] === 'api') {
+        return handleApiRequest(path.slice(1), request, env);
       }
+      return new Response("Not found", {status: 404});
     });
   }
 }
@@ -307,17 +297,6 @@ export class ChatRoom {
         case "/last": {
           // Return last stored message (JSON) or 204 if none.
           const storage = await this.storage.list({reverse: true, limit: 1});
-          const iter = storage.values();
-          const next = iter.next();
-          if (next.done) return new Response(null, {status: 204, headers: {"Access-Control-Allow-Origin": "*"}});
-          const raw = JSON.parse(next.value);
-          const apiObj = { ...raw, timestamp: new Date(raw.timestamp).toISOString() };
-          return new Response(JSON.stringify(apiObj), {status: 200, headers: {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}});
-        }
-
-        case "/all": {
-          // Return all stored messages (JSON) or 204 if none.
-          const storage = await this.storage.list({reverse: true});
           const iter = storage.values();
           const next = iter.next();
           if (next.done) return new Response(null, {status: 204, headers: {"Access-Control-Allow-Origin": "*"}});
