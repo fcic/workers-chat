@@ -547,8 +547,9 @@ function addChatMessage(name, text, isoTs) {
     let header = document.createElement("span");
     header.className = "username";
     header.innerText = name + " - " + datePart + " " + timePart;
-    header.style.backgroundColor = "darkcyan";
-    header.style.color = "white";
+    // header.style.backgroundColor = "darkcyan";
+    // header.style.color = "white";
+    header.style.color = "lightgray";
     p.appendChild(header);
     p.appendChild(document.createElement('br'));
   }
