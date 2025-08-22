@@ -11,6 +11,14 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <link rel="icon" href="https://img.icons8.com/?size=100&id=ib8fvSIANhAz&format=png&color=000000" type="image/png">
+
+<link rel="apple-touch-icon" href="https://img.icons8.com/?size=100&id=ib8fvSIANhAz&format=png&color=000000" type="image/png">
+
+
 <!--===================================================================================-->
 <!-- Inline style to avoid an extra round trip before the page can render. -->
 <style type="text/css">
@@ -538,6 +546,8 @@ function addChatMessage(name, text, isoTs) {
     let header = document.createElement("span");
     header.className = "username";
     header.innerText = name + " - " + datePart + " " + timePart;
+    header.style.backgroundColor = "darkcyan";
+    header.style.color = "white";
     p.appendChild(header);
     p.appendChild(document.createElement('br'));
   }
